@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>南京古景点 GIS 展示</title>
+  <link rel="preconnect" href="https://unpkg.com">
+  <link rel="preconnect" href="https://tile.openstreetmap.org">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <header class="brand">
+        <h1>南京古景点地图</h1>
+      </header>
+
+      <section class="auth-strip" aria-label="用户登录状态">
+        <div>
+          <span id="authStatus">未登录</span>
+          <strong id="authUser">游客访问</strong>
+        </div>
+        <button id="authOpenBtn" type="button">登录/注册</button>
+      </section>
+
+      <nav class="module-tabs" aria-label="功能模块切换">
+        <button id="mapModuleBtn" class="active" type="button">地图总览</button>
+        <button id="infoModuleBtn" type="button">详细资料库</button>
+      </nav>
+
+      <section class="controls" aria-label="景点查询">
+        <label class="search-box">
+          <span>搜索景点</span>
+          <input id="searchInput" type="search" placeholder="输入名称、朝代或关键词">
+        </label>
+        <div class="filter-row" id="typeFilters" aria-label="景点类型筛选"></div>
+      </section>
+
+      <section class="stats" aria-label="景点统计">
+        <div>
+          <strong id="spotCount">0</strong>
+          <span>处景点</span>
+        </div>
+        <div>
+          <strong id="dynastyCount">0</strong>
+          <span>历史阶段</span>
+        </div>
+        <div>
+          <strong id="routeCount">0</strong>
+          <span>条推荐路线</span>
+        </div>
+      </section>
+
+      <section class="summary">
+        <div class="section-title">
+          <h2>景点汇总</h2>
+          <button id="resetView" type="button">全图</button>
+        </div>
+        <div class="spot-list" id="spotList"></div>
+      </section>
+
+      <footer class="source-note">
+        地图底图来自 OpenStreetMap，部分景点图片来自 Wikimedia Commons，图片无法访问时会显示占位图。
+      </footer>
+    </aside>
+
+    <main class="content-stage">
+      <section class="map-stage module-view active" id="mapModule" aria-label="地图总览模块">
+        <div id="map" aria-label="南京古景点分布地图"></div>
+        <article class="detail-panel" id="detailPanel" aria-live="polite"></article>
+        <div class="legend">
+          <span><i class="dot temple"></i>寺庙</span>
+          <span><i class="dot garden"></i>园林</span>
+          <span><i class="dot wall"></i>城墙遗址</span>
+          <span><i class="dot culture"></i>文化古建</span>
+          <span><i class="dot tomb"></i>陵寝遗址</span>
+          <span><i class="dot modern"></i>近代史迹</span>
+          <span><i class="line"></i>推荐路线</span>
+        </div>
+      </section>
+
+      <section class="info-module module-view" id="infoModule" aria-label="景点详细资料模块">
+        <div class="info-header">
+          <div>
+            <p>景点详细资料库</p>
+            <h2 id="infoTitle">明孝陵</h2>
+          </div>
+          <button id="backToMap" type="button">返回地图</button>
+        </div>
+        <div class="info-layout">
+          <article class="info-article" id="infoArticle"></article>
+          <aside class="info-index">
+            <h3>全部景点</h3>
+            <div id="infoIndexList"></div>
+          </aside>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="auth-modal" id="authModal" aria-hidden="true">
+    <div class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button class="auth-close" id="authCloseBtn" type="button" aria-label="关闭">×</button>
+      <div class="auth-switch">
+        <button id="loginTab" class="active" type="button">登录</button>
+        <button id="registerTab" type="button">注册</button>
+      </div>
+      <form id="loginForm" class="auth-form active">
+        <h2 id="authTitle">用户登录</h2>
+        <label>
+          <span>邮箱或用户名</span>
+          <input name="account" type="text" autocomplete="username" required>
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button type="submit">登录</button>
+      </form>
+      <form id="registerForm" class="auth-form">
+        <h2>用户注册</h2>
+        <label>
+          <span>用户名</span>
+          <input name="username" type="text" autocomplete="username" minlength="2" required>
+        </label>
+        <label>
+          <span>邮箱</span>
+          <input name="email" type="email" autocomplete="email" required>
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="new-password" minlength="6" required>
+        </label>
+        <button type="submit">注册并登录</button>
+      </form>
+      <p class="auth-message" id="authMessage"></p>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

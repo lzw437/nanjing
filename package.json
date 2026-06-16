@@ -1,0 +1,19 @@
+{
+  "name": "nanjing-landscape-map",
+  "version": "1.0.0",
+  "private": true,
+  "description": "南京古景点 Leaflet GIS 展示与 MongoDB 注册登录后端",
+  "main": "server.js",
+  "scripts": {
+    "start": "node start.js",
+    "seed:landscapes": "node seed-landscapes.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongodb": "^6.12.0"
+  },
+  "devDependencies": {
+    "@vercel/node": "^5.8.17"
+  }
+}
