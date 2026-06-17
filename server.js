@@ -12,13 +12,14 @@ const collectionName = process.env.SIGN_IN_COLLECTION || "sign in";
 const tokenSecret = process.env.TOKEN_SECRET || "dev-secret";
 
 if (!mongoUri) {
-  console.warn("MONGODB_URI not set; DB features disabled");
+  throw new Error("Missing MONGODB_URI in .env");
 }
 
 const client = new MongoClient(mongoUri);
 let usersCollection;
 let interactionsCollection;
 let commentsCollection;
+let userImagesCollection;
 
 app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -28,19 +29,9 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "32kb" }));
+app.use(express.json({ limit: "10mb" }));
 app.use(express.static(__dirname));
 
-// Add lazy-connect middleware
-app.use(async (req, res, next) => {
-  if (!req.path.startsWith("/api/") || !mongoUri) return next();
-  try {
-    await ensureDb();
-  } catch (err) {
-    console.error("DB connection error:", err);
-  }
-  next();
-});
 function normalizeEmail(email) {
   return String(email || "").trim().toLowerCase();
 }
@@ -93,7 +84,7 @@ async function requireAuth(req, res, next) {
 
     const token = authHeader.slice(7);
     const [payloadB64] = token.split(".");
-    
+
     let payload;
     try {
       payload = JSON.parse(Buffer.from(payloadB64, "base64url").toString());
@@ -109,7 +100,7 @@ async function requireAuth(req, res, next) {
     try {
       userId = new ObjectId(payload.sub);
     } catch {
-      return res.status(401).json({ message: "无效的用户 ID。" });
+      return res.status(401).json({ message: "无效的用户ID。" });
     }
 
     const user = await usersCollection.findOne({ _id: userId });
@@ -198,7 +189,7 @@ app.post("/api/auth/login", async (req, res) => {
     });
 
     if (!user || !verifyPassword(password, user)) {
-      return res.status(401).json({ message: "账号或密码错误。" });
+      return res.status(401).json({ message: "用户名、邮箱或密码错误。" });
     }
 
     await usersCollection.updateOne(
@@ -228,13 +219,13 @@ app.get("/api/health", async (_req, res) => {
 app.get("/api/interactions/:spotId", async (req, res) => {
   try {
     const spotId = req.params.spotId;
-    
+
     const interaction = await interactionsCollection.findOne({ spotId });
     const comments = await commentsCollection
       .find({ spotId })
       .sort({ createdAtTimestamp: -1 })
       .toArray();
-    
+
     res.json({
       spotId,
       likes: interaction?.likes || [],
@@ -256,13 +247,13 @@ app.post("/api/interactions/:spotId/like", async (req, res) => {
   try {
     const spotId = req.params.spotId;
     const { userId } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({ message: "用户 ID 不能为空" });
     }
-    
+
     const interaction = await interactionsCollection.findOne({ spotId });
-    
+
     if (!interaction) {
       await interactionsCollection.insertOne({
         spotId,
@@ -273,19 +264,19 @@ app.post("/api/interactions/:spotId/like", async (req, res) => {
       });
       return res.json({ message: "点赞成功", liked: true });
     }
-    
+
     if (interaction.likes.includes(userId)) {
       return res.status(409).json({ message: "已经点过赞了" });
     }
-    
+
     await interactionsCollection.updateOne(
       { spotId },
-      { 
+      {
         $push: { likes: userId },
         $set: { updatedAt: new Date() }
       }
     );
-    
+
     res.json({ message: "点赞成功", liked: true });
   } catch (error) {
     console.error(error);
@@ -297,25 +288,25 @@ app.delete("/api/interactions/:spotId/like", async (req, res) => {
   try {
     const spotId = req.params.spotId;
     const { userId } = req.body;
-    
+
     if (!userId) {
       return res.status(400).json({ message: "用户 ID 不能为空" });
     }
-    
+
     const interaction = await interactionsCollection.findOne({ spotId });
-    
+
     if (!interaction || !interaction.likes.includes(userId)) {
       return res.status(404).json({ message: "未找到点赞记录" });
     }
-    
+
     await interactionsCollection.updateOne(
       { spotId },
-      { 
+      {
         $pull: { likes: userId },
         $set: { updatedAt: new Date() }
       }
     );
-    
+
     res.json({ message: "取消点赞成功", liked: false });
   } catch (error) {
     console.error(error);
@@ -327,11 +318,11 @@ app.post("/api/comments", requireAuth, async (req, res) => {
   try {
     const { spotId, content } = req.body;
     const user = req.user;
-    
+
     if (!spotId || !content.trim()) {
       return res.status(400).json({ message: "景点 ID 和评论内容不能为空" });
     }
-    
+
     const comment = {
       spotId,
       userId: user.id,
@@ -340,11 +331,11 @@ app.post("/api/comments", requireAuth, async (req, res) => {
       createdAt: new Date().toLocaleString("zh-CN"),
       createdAtTimestamp: new Date()
     };
-    
+
     const result = await commentsCollection.insertOne(comment);
-    
-    res.status(201).json({ 
-      message: "评论成功", 
+
+    res.status(201).json({
+      message: "评论成功",
       comment: {
         id: String(result.insertedId),
         ...comment
@@ -360,64 +351,99 @@ app.delete("/api/comments/:commentId", requireAuth, async (req, res) => {
   try {
     const commentId = req.params.commentId;
     const user = req.user;
-    
+
     let objectId;
     try {
       objectId = new ObjectId(commentId);
     } catch {
-      return res.status(400).json({ message: "无效的评论 ID" });
+      return res.status(400).json({ message: "无效的评论ID" });
     }
-    
+
     const comment = await commentsCollection.findOne({ _id: objectId });
-    
+
     if (!comment) {
-      return res.status(404).json({ message: "未找到评论" });
+      return res.status(404).json({ message: "评论不存在" });
     }
-    
+
     if (comment.userId !== user.id) {
-      return res.status(403).json({ message: "无权删除此评论" });
+      return res.status(403).json({ message: "无权删除他人评论" });
     }
-    
+
     await commentsCollection.deleteOne({ _id: objectId });
-    
-    res.json({ message: "删除评论成功" });
+
+    res.json({ message: "评论已删除" });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: "删除评论失败" });
   }
 });
 
-async function ensureDb() {
-  if (usersCollection) return;
+// 用户上传图片相关接口
+app.get("/api/images/:spotId", async (req, res) => {
+  try {
+    const spotId = req.params.spotId;
+    const images = await userImagesCollection
+      .find({ spotId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    res.json(images);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "获取图片失败" });
+  }
+});
+
+app.post("/api/images/upload", requireAuth, async (req, res) => {
+  try {
+    const { spotId, imageData } = req.body;
+    const user = req.user;
+
+    if (!spotId || !imageData) {
+      return res.status(400).json({ message: "景点 ID 和图片数据不能为空" });
+    }
+
+    const newImage = {
+      spotId,
+      userId: user.id,
+      username: user.username,
+      url: imageData, // 存储 Base64 数据
+      createdAt: new Date(),
+    };
+
+    const result = await userImagesCollection.insertOne(newImage);
+    res.status(201).json({
+      message: "上传成功",
+      image: {
+        id: result.insertedId,
+        ...newImage
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "上传图片失败" });
+  }
+});
+
+async function start() {
   await client.connect();
   const db = client.db(databaseName);
   usersCollection = db.collection(collectionName);
   interactionsCollection = db.collection("interactions");
   commentsCollection = db.collection("comment");
+  userImagesCollection = db.collection("uploaded image by users");
   await usersCollection.createIndex({ email: 1 }, { unique: true });
   await usersCollection.createIndex({ username: 1 }, { unique: true });
   await interactionsCollection.createIndex({ spotId: 1 }, { unique: true });
   await commentsCollection.createIndex({ spotId: 1 });
   await commentsCollection.createIndex({ userId: 1 });
+
+  app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+    console.log(`MongoDB collection: ${databaseName}.${collectionName}`);
+  });
 }
 
-// Vercel version: always export
-if (false) {
-  async function start() {
-    try {
-      await ensureDb();
-    } catch (err) {
-      console.error("MongoDB connection failed:", err);
-    }
-    app.listen(port, () => {
-      console.log(`Server running at http://localhost:${port}`);
-      console.log(`MongoDB collection: ${databaseName}.${collectionName}`);
-    });
-  }
-  start().catch((error) => {
-    console.error("Failed to start server:", error);
-    process.exit(1);
-  });
-} else {
-  module.exports = { app, ensureDb };
-}
+start().catch((error) => {
+  console.error("Failed to start server:", error);
+  process.exit(1);
+});

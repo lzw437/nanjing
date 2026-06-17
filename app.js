@@ -1255,6 +1255,13 @@ function renderInfoArticle(spot) {
         </div>
       </div>
       
+      <div class="user-gallery-section" id="gallery-${spot.id}">
+        <h4>用户分享图片</h4>
+        <div class="gallery-grid" id="gallery-grid-${spot.id}">
+          <p class="loading-gallery">加载中...</p>
+        </div>
+      </div>
+
       <div class="interaction-section">
         <div class="interaction-header">
           <button type="button" class="like-btn ${liked ? "liked" : ""}" data-spot="${spot.id}">
@@ -1267,7 +1274,13 @@ function renderInfoArticle(spot) {
         <div class="comment-section">
           <div class="comment-input">
             <textarea placeholder="写下你的评论..." rows="3" data-spot="${spot.id}"></textarea>
-            <button type="button" class="submit-comment" data-spot="${spot.id}">发表评论</button>
+            <div class="comment-actions">
+              <label class="submit-comment" for="image-upload-${spot.id}" style="width: auto; padding: 0 20px; cursor: pointer;">
+                上传图片
+                <input type="file" id="image-upload-${spot.id}" class="image-upload-input" accept="image/*" data-spot="${spot.id}">
+              </label>
+              <button type="button" class="submit-comment" data-spot="${spot.id}">发表评论</button>
+            </div>
           </div>
           
           <div class="comments-list" id="comments-${spot.id}">
@@ -1385,6 +1398,9 @@ function render() {
   renderMarkers(filteredSpots);
   renderDetailPanel(selectedSpot);
   renderInfoArticle(selectedSpot);
+  if (selectedSpot) {
+    loadUserImages(selectedSpot.id);
+  }
   renderInfoIndex(filteredSpots);
   updateStats(filteredSpots);
 }
@@ -1575,8 +1591,20 @@ document.addEventListener("click", async (event) => {
     const commentId = deleteCommentBtn.dataset.comment;
     if (await deleteComment(spotId, commentId)) {
       renderInfoArticle(spots.find(s => s.id === spotId));
+      loadUserImages(spotId);
     }
     return;
+  }
+});
+
+document.addEventListener("change", (event) => {
+  const imageUploadInput = event.target.closest(".image-upload-input[data-spot]");
+  if (imageUploadInput && imageUploadInput.files.length > 0) {
+    const spotId = imageUploadInput.dataset.spot;
+    const file = imageUploadInput.files[0];
+    uploadImage(spotId, file);
+    // 重置 input 以便下次可以上传同一张图片
+    imageUploadInput.value = "";
   }
 });
 
@@ -1667,6 +1695,126 @@ async function addComment(spotId, content) {
     alert(error.message || "评论失败");
     return false;
   }
+}
+
+async function loadUserImages(spotId) {
+  const container = document.getElementById(`gallery-grid-${spotId}`);
+  if (!container) return;
+
+  try {
+    const response = await fetch(`/api/images/${spotId}`);
+    if (!response.ok) throw new Error("加载图片失败");
+    const images = await response.json();
+    renderUserImages(spotId, images);
+  } catch (error) {
+    console.error("Failed to load user images:", error);
+    container.innerHTML = '<p class="gallery-error">无法加载图片库</p>';
+  }
+}
+
+function renderUserImages(spotId, images) {
+  const container = document.getElementById(`gallery-grid-${spotId}`);
+  if (!container) return;
+
+  if (images.length === 0) {
+    container.innerHTML = '<p class="gallery-empty">暂无用户分享图片</p>';
+    return;
+  }
+
+  container.innerHTML = images.map(img => `
+    <div class="gallery-item">
+      <img src="${img.url}" alt="用户分享" loading="lazy" onclick="expandImage(this.src)">
+      <div class="gallery-info">
+        <span>${img.username}</span>
+      </div>
+    </div>
+  `).join("");
+}
+
+function expandImage(src) {
+  const overlay = document.createElement('div');
+  overlay.className = 'image-overlay';
+  overlay.innerHTML = `
+    <div class="overlay-content">
+      <img src="${src}" alt="放大查看">
+      <button class="overlay-close">&times;</button>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.onclick = (e) => {
+    if (e.target.className === 'image-overlay' || e.target.className === 'overlay-close') {
+      document.body.removeChild(overlay);
+    }
+  };
+}
+
+async function uploadImage(spotId, file) {
+  const user = JSON.parse(localStorage.getItem("landscapeUser"));
+  const token = localStorage.getItem("landscapeToken");
+
+  if (!user || !token) {
+    alert("请先登录后再上传图片。");
+    openAuthModal("login");
+    return;
+  }
+
+  try {
+    const imageData = await resizeAndConvertToBase64(file, 1200, 1200);
+    const response = await fetch("/api/images/upload", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ spotId, imageData })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || "上传失败");
+    }
+
+    alert("图片上传成功！");
+    loadUserImages(spotId);
+  } catch (error) {
+    console.error("Upload error:", error);
+    alert(error.message || "上传图片时发生错误");
+  }
+}
+
+function resizeAndConvertToBase64(file, maxWidth, maxHeight) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height *= maxWidth / width;
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width *= maxHeight / height;
+            height = maxHeight;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", 0.7));
+      };
+    };
+    reader.onerror = (error) => reject(error);
+  });
 }
 
 async function loadCommentsFromServer(spotId) {
